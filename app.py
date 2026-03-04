@@ -50,5 +50,11 @@ def get_all_quotes():
     return quotes
 
 
+@app.route("/quotes/<int:id>")
+def show_quote(id):
+    for quote in quotes:
+        if quote['id'] == id:
+            return quote
+
 if __name__ == "__main__":
     app.run(debug=True)
