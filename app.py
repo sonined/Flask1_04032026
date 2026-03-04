@@ -55,6 +55,7 @@ def show_quote(id):
     for quote in quotes:
         if quote['id'] == id:
             return quote
+    return f"Quote with id={id} not found", 404
 
 if __name__ == "__main__":
     app.run(debug=True)
