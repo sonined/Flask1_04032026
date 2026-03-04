@@ -51,11 +51,15 @@ def get_all_quotes():
 
 
 @app.route("/quotes/<int:id>")
-def show_quote(id):
+def get_quote(id):
     for quote in quotes:
         if quote['id'] == id:
             return quote
     return f"Quote with id={id} not found", 404
+
+@app.route("/quotes/count")
+def get_quotes_count():
+    return {"count":len(quotes)}
 
 if __name__ == "__main__":
     app.run(debug=True)
