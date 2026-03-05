@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from http import HTTPStatus
 from pathlib import Path
 import random
@@ -11,6 +11,20 @@ path_to_db = BASE_DIR / "store.db"  # <- тут путь к БД
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
+
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(path_to_db)
+    return db
+
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
 
 #quotes = [
 #   {
@@ -45,11 +59,8 @@ app.config['JSON_AS_ASCII'] = False
 def get_all_quotes():
     select_quotes = "SELECT * from quotes"
 
-    # Подключение в БД
-    connection = sqlite3.connect("store.db")
-
     # Создаем cursor, он позволяет делать SQL-запросы
-    cursor = connection.cursor()
+    cursor = get_db.cursor()
 
     # Выполняем запрос:
     cursor.execute(select_quotes)
@@ -57,12 +68,6 @@ def get_all_quotes():
     # Извлекаем результаты запроса
     quotes_db = cursor.fetchall()  # get list[tuple]
     print(f"{quotes_db=}")
-
-    # Закрыть курсор:
-    cursor.close()
-
-    # Закрыть соединение:
-    connection.close()
 
     # Подготовка данных для отправки в правильном формате
     # Необходимо выполнить преобразование: 
@@ -77,19 +82,16 @@ def get_all_quotes():
 
 @app.route("/quotes/<int:id>")
 def get_quote(id):
-    select_quote = "SELECT * FROM quotes WHERE id=?;"
-    connection = sqlite3.connect("store.db")
-    cursor = connection.cursor()
+    select_quote = "SELECT * FROM quotes WHERE id=?"
+    cursor = get_db.cursor()
     cursor.execute(select_quote, (id,))
     quote_db = cursor.fetchone()
-    cursor.close()
-    connection.close()
     if quote_db:
         keys = {"id", "author", "text"}
         quote = dict(zip(keys, quote_db))
         return jsonify(quote), 200
     else:
-        return f"Quote with id={id} not found", 404
+        return {"error": f"Quote with id={id} not found"}, 404
 
 
 @app.route("/quotes/count")
@@ -99,32 +101,23 @@ def get_quotes_count():
 
 @app.route("/quotes", methods=['POST'])
 def create_quote():
-    insert_quote = "INSERT INTO quotes (author, text) VALUES (?, ?);"
-    select_quote = "SELECT * FROM quotes WHERE id=?;"
+    insert_quote = "INSERT INTO quotes (author, text) VALUES (?, ?)"
     new_quote = request.json
-    connection = sqlite3.connect("store.db")
-    cursor = connection.cursor()
+    cursor = get_db.cursor()
     cursor.execute(insert_quote, (new_quote["author"], new_quote["text"]))
     connection.commit()
     new_id = cursor.lastrowid
-    cursor.execute(select_quote, (new_id,))
-    quote_db = cursor.fetchone()
-    cursor.close()
-    connection.close()
-    keys = {"id", "author", "text"}
-    quote = dict(zip(keys, quote_db))
+    quote = new_quote['id']
     return jsonify(quote), 201
 
 
 @app.route("/quotes/<int:id>", methods=['PUT'])
 def edit_quote(id):
-    update_quote_author = "UPDATE quotes SET author=? WHERE id=?;"
-    update_quote_text = "UPDATE quotes SET text=? WHERE id=?;"
-    select_quote = "SELECT * FROM quotes WHERE id=?;"
+    update_quote_author = "UPDATE quotes SET author=? WHERE id=?"
+    update_quote_text = "UPDATE quotes SET text=? WHERE id=?"
+    select_quote = "SELECT * FROM quotes WHERE id=?"
     new_data = request.json
-
-    connection = sqlite3.connect("store.db")
-    cursor = connection.cursor()
+    cursor = get_db.cursor()
     
     if "author" in new_data:
         cursor.execute(update_quote_author, (new_data["author"], id))
@@ -143,17 +136,11 @@ def edit_quote(id):
     else:
         return jsonify({"error": f"Quote not update"}), 500
 
-    cursor.close()
-    connection.close()
-
 
 @app.route("/quotes/<int:quote_id>", methods=["DELETE"])
 def delete_quote(quote_id: int):
-    delete_quote = "DELETE FROM quotes WHERE id=?;"
-
-    connection = sqlite3.connect("store.db")
-    cursor = connection.cursor()
-
+    delete_quote = "DELETE FROM quotes WHERE id=?"
+    cursor = get_db.cursor()
     cursor.execute(delete_quote, (quote_id,))
     connection.commit()
 
@@ -161,9 +148,6 @@ def delete_quote(quote_id: int):
         return jsonify({"message": f"Quote with id={quote_id} has deleted"}), 200
     else:
         return jsonify({"error": f"Quote not deleted"}), 500
-    
-    cursor.close()
-    connection.close()
 
 
 @app.route("/quotes/filter", methods=['GET'])
