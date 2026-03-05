@@ -116,5 +116,22 @@ def delete_quote(quote_id: int):
     return f"Quote with id={quote_id} not found", 404
 
 
+@app.route("/quotes/filter", methods=['GET'])
+def filter_quotes():
+    filters = request.args
+    author = filters.get('author')
+    rating = filters.get('rating')
+
+    result = quotes
+
+    if author is not None:
+        result = [quote for quote in result if quote.get('author') == author]
+
+    if rating is not None:
+        result = [quote for quote in result if quote.get('rating') == int(rating)]
+
+    return result
+
+
 if __name__ == "__main__":
     app.run(debug=True)
