@@ -80,11 +80,19 @@ def create_new_id():
 
 @app.route("/quotes", methods=['POST'])
 def create_quote():
-    data = request.json
-    data["id"] = create_new_id()
-    quotes.append(data)
-    print("data = ", data)
-    return data, 201
+    new_quote = request.json
+    new_quote["id"] = create_new_id()
+    quotes.append(new_quote)
+    return jsonify(new_quote), 201
+
+
+@app.route("/quotes/<int:quote_id>", methods=["DELETE"])
+def delete_quote(quote_id: int):
+    for quote in quotes:
+        if quote['id'] == quote_id:
+            quotes.remove(quote)
+            return jsonify({"message": f"Quote with id={quote_id} has deleted"}), 200
+    return f"Quote with id={quote_id} not found", 404
 
 
 if __name__ == "__main__":
