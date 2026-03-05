@@ -16,21 +16,25 @@ quotes = [
    {
        "id": 3,
        "author": "Rick Cook",
+       "rating": 4,
        "text": "Программирование сегодня — это гонка разработчиков программ, стремящихся писать программы с большей и лучшей идиотоустойчивостью, и вселенной, которая пытается создать больше отборных идиотов. Пока вселенная побеждает."
    },
    {
        "id": 5,
        "author": "Waldi Ravens",
+       "rating": 3,
        "text": "Программирование на С похоже на быстрые танцы на только что отполированном полу людей с острыми бритвами в руках."
    },
    {
        "id": 6,
        "author": "Mosher’s Law of Software Engineering",
+       "rating": 5,
        "text": "Не волнуйтесь, если что-то не работает. Если бы всё работало, вас бы уволили."
    },
    {
        "id": 8,
        "author": "Yoggi Berra",
+       "rating": 2,
        "text": "В теории, теория и практика неразделимы. На практике это не так."
    },
 
@@ -82,6 +86,8 @@ def create_new_id():
 def create_quote():
     new_quote = request.json
     new_quote["id"] = create_new_id()
+    if "rating" not in new_quote or new_quote["rating"] > 5:
+        new_quote["rating"] = 1
     quotes.append(new_quote)
     return jsonify(new_quote), 201
 
@@ -96,6 +102,8 @@ def edit_quote(id):
         quote["text"] = new_data["text"]
     if "author" in new_data:
         quote["author"] = new_data["author"]
+    if "rating" in new_data and 1 <= new_data["rating"] <= 5:
+        quote["rating"] = new_data["rating"]
     return quote, 200
 
 
