@@ -70,21 +70,20 @@ def get_quote_random():
     return random.choice(quotes)
 
 
-def create_id_for_new_quote():
+def create_new_id():
     last_id = 0
     for quote in quotes:
         if quote['id'] > last_id:
             last_id = quote['id']
-    return last_id
+    return last_id + 1
 
 
 @app.route("/quotes", methods=['POST'])
 def create_quote():
     data = request.json
-    id = create_id_for_new_quote() + 1
+    data["id"] = create_new_id()
+    quotes.append(data)
     print("data = ", data)
-    print("id = ", id)
-    data["id"] = id
     return data, 201
 
 
