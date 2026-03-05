@@ -1,67 +1,95 @@
-from flask import Flask, jsonify
-from flask import request
+from flask import Flask, jsonify, request
+from http import HTTPStatus
+from pathlib import Path
 import random
+import sqlite3
+
+
+BASE_DIR = Path(__file__).parent
+path_to_db = BASE_DIR / "store.db"  # <- тут путь к БД
+
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
+#quotes = [
+#   {
+#       "id": 3,
+#       "author": "Rick Cook",
+#       "rating": 4,
+#       "text": "Программирование сегодня — это гонка разработчиков программ, стремящихся писать программы с большей и лучшей идиотоустойчивостью, и вселенной, которая пытается создать больше отборных идиотов. Пока вселенная побеждает."
+#   },
+#   {
+#       "id": 5,
+#       "author": "Waldi Ravens",
+#       "rating": 3,
+#       "text": "Программирование на С похоже на быстрые танцы на только что отполированном полу людей с острыми бритвами в руках."
+#   },
+#   {
+#       "id": 6,
+#       "author": "Mosher’s Law of Software Engineering",
+#       "rating": 5,
+#       "text": "Не волнуйтесь, если что-то не работает. Если бы всё работало, вас бы уволили."
+#   },
+#   {
+#       "id": 8,
+#       "author": "Yoggi Berra",
+#       "rating": 2,
+#       "text": "В теории, теория и практика неразделимы. На практике это не так."
+#   },
 
-about_me = {
-    "name": "Софья",
-    "surname": "Недоступ",
-    "email": "sonined@gmail.com"
-}
-
-quotes = [
-   {
-       "id": 3,
-       "author": "Rick Cook",
-       "rating": 4,
-       "text": "Программирование сегодня — это гонка разработчиков программ, стремящихся писать программы с большей и лучшей идиотоустойчивостью, и вселенной, которая пытается создать больше отборных идиотов. Пока вселенная побеждает."
-   },
-   {
-       "id": 5,
-       "author": "Waldi Ravens",
-       "rating": 3,
-       "text": "Программирование на С похоже на быстрые танцы на только что отполированном полу людей с острыми бритвами в руках."
-   },
-   {
-       "id": 6,
-       "author": "Mosher’s Law of Software Engineering",
-       "rating": 5,
-       "text": "Не волнуйтесь, если что-то не работает. Если бы всё работало, вас бы уволили."
-   },
-   {
-       "id": 8,
-       "author": "Yoggi Berra",
-       "rating": 2,
-       "text": "В теории, теория и практика неразделимы. На практике это не так."
-   },
-
-]
-
-
-@app.route("/")  # Это первый URL, который мы будем обрабатывать
-def hello_world():  # Эта функция-обработчик будет вызвана при запросе этого URL
-    return "Hello, World!"
-
-
-@app.route("/about")
-def about():
-    return about_me
+#]
 
 
 @app.route("/quotes")
 def get_all_quotes():
-    return quotes
+    select_quotes = "SELECT * from quotes"
+
+    # Подключение в БД
+    connection = sqlite3.connect("store.db")
+
+    # Создаем cursor, он позволяет делать SQL-запросы
+    cursor = connection.cursor()
+
+    # Выполняем запрос:
+    cursor.execute(select_quotes)
+
+    # Извлекаем результаты запроса
+    quotes_db = cursor.fetchall()  # get list[tuple]
+    print(f"{quotes_db=}")
+
+    # Закрыть курсор:
+    cursor.close()
+
+    # Закрыть соединение:
+    connection.close()
+
+    # Подготовка данных для отправки в правильном формате
+    # Необходимо выполнить преобразование: 
+    # list[tuple] -> list[dict]
+    keys = {"id", "author", "text"}
+    quotes = []
+    for quote_db in quotes_db:
+        quote = dict(zip(keys, quote_db))
+        quotes.append(quote)
+    return jsonify(quotes), 200
 
 
 @app.route("/quotes/<int:id>")
 def get_quote(id):
-    for quote in quotes:
-        if quote['id'] == id:
-            return quote
-    return None
+    select_quote = "SELECT * FROM quotes WHERE id=?;"
+    connection = sqlite3.connect("store.db")
+    cursor = connection.cursor()
+    cursor.execute(select_quote, (id,))
+    quote_db = cursor.fetchone()
+    cursor.close()
+    connection.close()
+    if quote_db:
+        keys = {"id", "author", "text"}
+        quote = dict(zip(keys, quote_db))
+        return jsonify(quote), 200
+    else:
+        return f"Quote with id={id} not found", 404
 
 
 @app.route("/quotes/count")
@@ -69,51 +97,73 @@ def get_quotes_count():
     return {"count":len(quotes)}
 
 
-@app.route("/quotes/random")    
-def get_quote_random():
-    return random.choice(quotes)
-
-
-def create_new_id():
-    last_id = 0
-    for quote in quotes:
-        if quote['id'] > last_id:
-            last_id = quote['id']
-    return last_id + 1
-
-
 @app.route("/quotes", methods=['POST'])
 def create_quote():
+    insert_quote = "INSERT INTO quotes (author, text) VALUES (?, ?);"
+    select_quote = "SELECT * FROM quotes WHERE id=?;"
     new_quote = request.json
-    new_quote["id"] = create_new_id()
-    if "rating" not in new_quote or new_quote["rating"] > 5:
-        new_quote["rating"] = 1
-    quotes.append(new_quote)
-    return jsonify(new_quote), 201
+    connection = sqlite3.connect("store.db")
+    cursor = connection.cursor()
+    cursor.execute(insert_quote, (new_quote["author"], new_quote["text"]))
+    connection.commit()
+    new_id = cursor.lastrowid
+    cursor.execute(select_quote, (new_id,))
+    quote_db = cursor.fetchone()
+    cursor.close()
+    connection.close()
+    keys = {"id", "author", "text"}
+    quote = dict(zip(keys, quote_db))
+    return jsonify(quote), 201
 
 
 @app.route("/quotes/<int:id>", methods=['PUT'])
 def edit_quote(id):
+    update_quote_author = "UPDATE quotes SET author=? WHERE id=?;"
+    update_quote_text = "UPDATE quotes SET text=? WHERE id=?;"
+    select_quote = "SELECT * FROM quotes WHERE id=?;"
     new_data = request.json
-    quote = get_quote(id)
-    if not quote:
-        return f"Quote with id={id} not found", 404
-    if "text" in new_data:
-        quote["text"] = new_data["text"]
+
+    connection = sqlite3.connect("store.db")
+    cursor = connection.cursor()
+    
     if "author" in new_data:
-        quote["author"] = new_data["author"]
-    if "rating" in new_data and 1 <= new_data["rating"] <= 5:
-        quote["rating"] = new_data["rating"]
-    return quote, 200
+        cursor.execute(update_quote_author, (new_data["author"], id))
+    connection.commit()
+
+    if "text" in new_data:
+        cursor.execute(update_quote_text, (new_data["text"], id))
+    connection.commit()
+
+    if cursor.rowcount > 0:
+        cursor.execute(select_quote, (id,))
+        quote_db = cursor.fetchone()
+        keys = {"id", "author", "text"}
+        quote = dict(zip(keys, quote_db))
+        return jsonify(quote), 200
+    else:
+        return jsonify({"error": f"Quote not update"}), 500
+
+    cursor.close()
+    connection.close()
 
 
 @app.route("/quotes/<int:quote_id>", methods=["DELETE"])
 def delete_quote(quote_id: int):
-    for quote in quotes:
-        if quote['id'] == quote_id:
-            quotes.remove(quote)
-            return jsonify({"message": f"Quote with id={quote_id} has deleted"}), 200
-    return f"Quote with id={quote_id} not found", 404
+    delete_quote = "DELETE FROM quotes WHERE id=?;"
+
+    connection = sqlite3.connect("store.db")
+    cursor = connection.cursor()
+
+    cursor.execute(delete_quote, (quote_id,))
+    connection.commit()
+
+    if cursor.rowcount > 0:
+        return jsonify({"message": f"Quote with id={quote_id} has deleted"}), 200
+    else:
+        return jsonify({"error": f"Quote not deleted"}), 500
+    
+    cursor.close()
+    connection.close()
 
 
 @app.route("/quotes/filter", methods=['GET'])
