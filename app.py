@@ -1,169 +1,138 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g, abort
 from http import HTTPStatus
 from pathlib import Path
+from werkzeug.exceptions import HTTPException
 import random
 import sqlite3
+# import for sqlalchemy
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Integer
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 BASE_DIR = Path(__file__).parent
-path_to_db = BASE_DIR / "store.db"  # <- тут путь к БД
+path_to_db = BASE_DIR / "quotes.db"  # <- тут путь к БД
 
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{BASE_DIR / 'main.db'}"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-#quotes = [
-#   {
-#       "id": 3,
-#       "author": "Rick Cook",
-#       "rating": 4,
-#       "text": "Программирование сегодня — это гонка разработчиков программ, стремящихся писать программы с большей и лучшей идиотоустойчивостью, и вселенной, которая пытается создать больше отборных идиотов. Пока вселенная побеждает."
-#   },
-#   {
-#       "id": 5,
-#       "author": "Waldi Ravens",
-#       "rating": 3,
-#       "text": "Программирование на С похоже на быстрые танцы на только что отполированном полу людей с острыми бритвами в руках."
-#   },
-#   {
-#       "id": 6,
-#       "author": "Mosher’s Law of Software Engineering",
-#       "rating": 5,
-#       "text": "Не волнуйтесь, если что-то не работает. Если бы всё работало, вас бы уволили."
-#   },
-#   {
-#       "id": 8,
-#       "author": "Yoggi Berra",
-#       "rating": 2,
-#       "text": "В теории, теория и практика неразделимы. На практике это не так."
-#   },
 
-#]
+db = SQLAlchemy(model_class=Base)
+db.init_app(app)
+
+
+class QuoteModel(db.Model):
+    __tablename__ = 'quotes'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    author: Mapped[str] = mapped_column(String(32), unique=False, index=True)
+    text: Mapped[str] = mapped_column(String(255))
+    rating: Mapped[int] = mapped_column(Integer, default=1)
+
+    def __init__(self, author, text, rating):
+        self.author = author
+        self.text  = text
+        self.rating = rating
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "author": self.author,
+            "text": self.text,
+            "rating": self.rating
+        }
+
+
+@app.errorhandler(HTTPException)
+def hancle_exeption(e):
+    """Функция для перехвата HTTP ошибок и возврата в виде JSON"""
+    return jsonify({"message": e.description}), e.code
 
 
 @app.route("/quotes")
 def get_all_quotes():
-    select_quotes = "SELECT * from quotes"
-
-    # Подключение в БД
-    connection = sqlite3.connect("store.db")
-
-    # Создаем cursor, он позволяет делать SQL-запросы
-    cursor = connection.cursor()
-
-    # Выполняем запрос:
-    cursor.execute(select_quotes)
-
-    # Извлекаем результаты запроса
-    quotes_db = cursor.fetchall()  # get list[tuple]
-    print(f"{quotes_db=}")
-
-    # Закрыть курсор:
-    cursor.close()
-
-    # Закрыть соединение:
-    connection.close()
-
-    # Подготовка данных для отправки в правильном формате
-    # Необходимо выполнить преобразование: 
-    # list[tuple] -> list[dict]
-    keys = {"id", "author", "text"}
+    quotes_db = db.session.scalars(db.select(QuoteModel)).all()
     quotes = []
-    for quote_db in quotes_db:
-        quote = dict(zip(keys, quote_db))
-        quotes.append(quote)
+    for quote in quotes_db:
+        quotes.append(quote.to_dict())
     return jsonify(quotes), 200
 
 
 @app.route("/quotes/<int:id>")
 def get_quote(id):
-    select_quote = "SELECT * FROM quotes WHERE id=?;"
-    connection = sqlite3.connect("store.db")
-    cursor = connection.cursor()
-    cursor.execute(select_quote, (id,))
-    quote_db = cursor.fetchone()
-    cursor.close()
-    connection.close()
-    if quote_db:
-        keys = {"id", "author", "text"}
-        quote = dict(zip(keys, quote_db))
+    quote = db.session.get(QuoteModel, id)
+    if quote:
+        quote = quote.to_dict()
         return jsonify(quote), 200
     else:
-        return f"Quote with id={id} not found", 404
+        return jsonify({"error": f"Quote with id={id} not found"}), 404
 
 
-@app.route("/quotes/count")
-def get_quotes_count():
-    return {"count":len(quotes)}
+# @app.route("/quotes/count")
+# def get_quotes_count():
+#     select_count = "SELECT count(*) as count FROM quotes"
+#     cursor = get_db().cursor()
+#     cursor.execute(select_count)
+#     count = cursor.fetchone()
+#     if count:
+#         return jsonify(count=count[0]), 200
+#     abort(503) # вернем ошибку 503
 
 
 @app.route("/quotes", methods=['POST'])
 def create_quote():
-    insert_quote = "INSERT INTO quotes (author, text) VALUES (?, ?);"
-    select_quote = "SELECT * FROM quotes WHERE id=?;"
-    new_quote = request.json
-    connection = sqlite3.connect("store.db")
-    cursor = connection.cursor()
-    cursor.execute(insert_quote, (new_quote["author"], new_quote["text"]))
-    connection.commit()
-    new_id = cursor.lastrowid
-    cursor.execute(select_quote, (new_id,))
-    quote_db = cursor.fetchone()
-    cursor.close()
-    connection.close()
-    keys = {"id", "author", "text"}
-    quote = dict(zip(keys, quote_db))
-    return jsonify(quote), 201
+    new_data = request.json
+    if 'author' not in new_data or 'text' not in new_data:
+        return jsonify({"error": "Author or text not found"}), 404
+    else:
+        if 'rating' not in new_data or new_data['rating'] not in range(1, 6):
+            rating = 1
+        else:
+            rating = new_data['rating']
+        new_quote = QuoteModel(author=new_data['author'], text=new_data['text'], rating=rating)
+        db.session.add(new_quote)
+        db.session.commit()
+        new_quote = new_quote.to_dict()
+        return jsonify(new_quote), 201
 
 
 @app.route("/quotes/<int:id>", methods=['PUT'])
 def edit_quote(id):
-    update_quote_author = "UPDATE quotes SET author=? WHERE id=?;"
-    update_quote_text = "UPDATE quotes SET text=? WHERE id=?;"
-    select_quote = "SELECT * FROM quotes WHERE id=?;"
     new_data = request.json
+    quote = db.session.get(QuoteModel, id)
+    if quote:
+        if new_data['rating'] not in range(1, 6):
+            pass
+        else:
+            quote.rating = new_data['rating']
+        if "author" in new_data:
+            quote.author = new_data["author"]
+        if "text" in new_data:
+            quote.text = new_data["text"]
+        db.session.commit()
+        new_quote = quote.to_dict()
+        return jsonify(new_quote), 201
+    else:  
+        return jsonify({"error": f"Quote with id={id} not found"}), 404
 
-    connection = sqlite3.connect("store.db")
-    cursor = connection.cursor()
-    
-    if "author" in new_data:
-        cursor.execute(update_quote_author, (new_data["author"], id))
-    connection.commit()
 
-    if "text" in new_data:
-        cursor.execute(update_quote_text, (new_data["text"], id))
-    connection.commit()
-
-    if cursor.rowcount > 0:
-        cursor.execute(select_quote, (id,))
-        quote_db = cursor.fetchone()
-        keys = {"id", "author", "text"}
-        quote = dict(zip(keys, quote_db))
-        return jsonify(quote), 200
+@app.route("/quotes/<int:id>", methods=["DELETE"])
+def delete_quote(id: int):
+    quote = db.session.get(QuoteModel, id)
+    if quote:
+        db.session.delete(quote)
+        db.session.commit()
+        return jsonify({"message": f"Quote with id={id} has deleted"}), 200
     else:
-        return jsonify({"error": f"Quote not update"}), 500
-
-    cursor.close()
-    connection.close()
-
-
-@app.route("/quotes/<int:quote_id>", methods=["DELETE"])
-def delete_quote(quote_id: int):
-    delete_quote = "DELETE FROM quotes WHERE id=?;"
-
-    connection = sqlite3.connect("store.db")
-    cursor = connection.cursor()
-
-    cursor.execute(delete_quote, (quote_id,))
-    connection.commit()
-
-    if cursor.rowcount > 0:
-        return jsonify({"message": f"Quote with id={quote_id} has deleted"}), 200
-    else:
-        return jsonify({"error": f"Quote not deleted"}), 500
-    
-    cursor.close()
-    connection.close()
+        return jsonify({"error": f"Quote with id={id} not found"}), 404
 
 
 @app.route("/quotes/filter", methods=['GET'])
@@ -172,15 +141,21 @@ def filter_quotes():
     author = filters.get('author')
     rating = filters.get('rating')
 
-    result = quotes
+    result = db.select(QuoteModel)
 
     if author is not None:
-        result = [quote for quote in result if quote.get('author') == author]
+        result = result.filter_by(author=author)
 
     if rating is not None:
-        result = [quote for quote in result if quote.get('rating') == int(rating)]
+        result = result.filter_by(rating=rating)
 
-    return result
+    result = db.session.scalars(result).all()
+
+    quotes = []
+
+    for quote in result:
+        quotes.append(quote.to_dict())
+    return jsonify(quotes), 200
 
 
 if __name__ == "__main__":
