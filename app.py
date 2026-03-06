@@ -60,7 +60,7 @@ def get_all_quotes():
     select_quotes = "SELECT * from quotes"
 
     # Создаем cursor, он позволяет делать SQL-запросы
-    cursor = get_db.cursor()
+    cursor = get_db().cursor()
 
     # Выполняем запрос:
     cursor.execute(select_quotes)
@@ -83,7 +83,7 @@ def get_all_quotes():
 @app.route("/quotes/<int:id>")
 def get_quote(id):
     select_quote = "SELECT * FROM quotes WHERE id=?"
-    cursor = get_db.cursor()
+    cursor = get_db().cursor()
     cursor.execute(select_quote, (id,))
     quote_db = cursor.fetchone()
     if quote_db:
@@ -103,7 +103,8 @@ def get_quotes_count():
 def create_quote():
     insert_quote = "INSERT INTO quotes (author, text) VALUES (?, ?)"
     new_quote = request.json
-    cursor = get_db.cursor()
+    connection = get_db()
+    cursor = connection.cursor()
     cursor.execute(insert_quote, (new_quote["author"], new_quote["text"]))
     connection.commit()
     new_id = cursor.lastrowid
@@ -117,7 +118,8 @@ def edit_quote(id):
     update_quote_text = "UPDATE quotes SET text=? WHERE id=?"
     select_quote = "SELECT * FROM quotes WHERE id=?"
     new_data = request.json
-    cursor = get_db.cursor()
+    connection = get_db()
+    cursor = connection.cursor()
     
     if "author" in new_data:
         cursor.execute(update_quote_author, (new_data["author"], id))
@@ -140,7 +142,9 @@ def edit_quote(id):
 @app.route("/quotes/<int:quote_id>", methods=["DELETE"])
 def delete_quote(quote_id: int):
     delete_quote = "DELETE FROM quotes WHERE id=?"
-    cursor = get_db.cursor()
+    
+    connection = get_db()
+    cursor = connection.cursor()
     cursor.execute(delete_quote, (quote_id,))
     connection.commit()
 
