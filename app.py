@@ -2,13 +2,13 @@ from flask import Flask, jsonify, request, g, abort
 from http import HTTPStatus
 from pathlib import Path
 from werkzeug.exceptions import HTTPException
-import random
-import sqlite3
+
 # import for sqlalchemy
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Integer
+from sqlalchemy import String, Integer, func
+from flask_migrate import Migrate
 
 
 class Base(DeclarativeBase):
@@ -16,17 +16,16 @@ class Base(DeclarativeBase):
 
 
 BASE_DIR = Path(__file__).parent
-path_to_db = BASE_DIR / "quotes.db"  # <- тут путь к БД
-
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{BASE_DIR / 'main.db'}"
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{BASE_DIR / 'quotes.db'}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 
 db = SQLAlchemy(model_class=Base)
 db.init_app(app)
+migrate = Migrate(app, db)
 
 
 class QuoteModel(db.Model):
@@ -76,15 +75,10 @@ def get_quote(id):
         return jsonify({"error": f"Quote with id={id} not found"}), 404
 
 
-# @app.route("/quotes/count")
-# def get_quotes_count():
-#     select_count = "SELECT count(*) as count FROM quotes"
-#     cursor = get_db().cursor()
-#     cursor.execute(select_count)
-#     count = cursor.fetchone()
-#     if count:
-#         return jsonify(count=count[0]), 200
-#     abort(503) # вернем ошибку 503
+@app.route("/quotes/count")
+def get_quotes_count():
+    count = db.session.scalar(func.count(QuoteModel.id))
+    return jsonify(count=count), 200
 
 
 @app.route("/quotes", methods=['POST'])
@@ -127,12 +121,13 @@ def edit_quote(id):
 @app.route("/quotes/<int:id>", methods=["DELETE"])
 def delete_quote(id: int):
     quote = db.session.get(QuoteModel, id)
-    if quote:
-        db.session.delete(quote)
+    db.session.delete(quote)
+    try:
         db.session.commit()
         return jsonify({"message": f"Quote with id={id} has deleted"}), 200
-    else:
-        return jsonify({"error": f"Quote with id={id} not found"}), 404
+    except Exception as e:
+        db.session.rollback()
+        abort(503, f"Database error: {e.description}")
 
 
 @app.route("/quotes/filter", methods=['GET'])
