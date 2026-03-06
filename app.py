@@ -106,10 +106,10 @@ def create_quote():
     connection = get_db()
     cursor = connection.cursor()
     cursor.execute(insert_quote, (new_quote["author"], new_quote["text"]))
-    connection.commit()
     new_id = cursor.lastrowid
-    quote = new_quote['id']
-    return jsonify(quote), 201
+    connection.commit()
+    new_quote['id'] = new_id
+    return jsonify(new_quote), 201
 
 
 @app.route("/quotes/<int:id>", methods=['PUT'])
