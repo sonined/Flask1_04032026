@@ -52,15 +52,17 @@ class QuoteModel(db.Model):
     text: Mapped[str] = mapped_column(String(255))
     rating: Mapped[int] = mapped_column(server_default='1')
 
-    def __init__(self, author, text):
+    def __init__(self, author, text, rating):
         self.author = author
         self.text  = text
+        self.rating = rating
 
 
     def to_dict(self):
         return {
             "id": self.id,
-            "text": self.text
+            "text": self.text,
+            "rating": self.rating
         }
 
 
@@ -69,6 +71,18 @@ def hancle_exeption(e):
     """Функция для перехвата HTTP ошибок и возврата в виде JSON"""
     return jsonify({"message": e.description}), e.code
 
+# === CRUD ДЛЯ АВТОРОВ ===
+
+
+@app.route("/authors", methods=["POST"])
+def create_author():
+       author_data = request.json
+       author = AuthorModel(author_data["name"])
+       db.session.add(author)
+       db.session.commit()
+       return author.to_dict(), 201
+
+# === CRUD ДЛЯ ЦИТАТ ===
 
 @app.route("/quotes")
 def get_all_quotes():
@@ -79,6 +93,16 @@ def get_all_quotes():
     return jsonify(quotes), 200
 
 
+@app.route("/quotes/<int:id>")
+def get_quote(id):
+    quote = db.session.get(QuoteModel, id)
+    if quote:
+        quote = quote.to_dict()
+        return jsonify(quote), 200
+    else:
+        return jsonify({"error": f"Quote with id={id} not found"}), 404
+    
+
 @app.route("/authors/<int:author_id>/quotes")
 def get_authors_quotes(author_id):
     author = db.session.get(AuthorModel, author_id)
@@ -88,37 +112,20 @@ def get_authors_quotes(author_id):
     return jsonify(author=author.to_dict(), quotes=quotes), 200
 
 
-@app.route("/quotes/<int:id>")
-def get_quote(id):
-    quote = db.session.get(QuoteModel, id)
-    if quote:
-        quote = quote.to_dict()
-        return jsonify(quote), 200
-    else:
-        return jsonify({"error": f"Quote with id={id} not found"}), 404
-
-
-@app.route("/quotes/count")
-def get_quotes_count():
-    count = db.session.scalar(func.count(QuoteModel.id))
-    return jsonify(count=count), 200
-
-
-@app.route("/quotes", methods=['POST'])
-def create_quote():
-    new_data = request.json
-    if 'author' not in new_data or 'text' not in new_data:
-        return jsonify({"error": "Author or text not found"}), 404
-    else:
-        if 'rating' not in new_data or new_data['rating'] not in range(1, 6):
-            rating = 1
-        else:
-            rating = new_data['rating']
-        new_quote = QuoteModel(author=new_data['author'], text=new_data['text'], rating=rating)
-        db.session.add(new_quote)
-        db.session.commit()
-        new_quote = new_quote.to_dict()
-        return jsonify(new_quote), 201
+@app.route("/authors/<int:author_id>/quotes", methods=["POST"])
+def create_quote(author_id: int):
+   author = db.session.get(AuthorModel, author_id)
+   new_quote = request.json
+   if author:
+        if "rating" in new_quote:
+            rating = new_quote['rating']
+            if new_quote['rating'] in range(1, 6):
+                quote = QuoteModel(author, new_quote["rating"])
+        if "text" in new_quote:
+            quote = QuoteModel(author, new_quote["text"])
+   db.session.add(quote)
+   db.session.commit()
+   return quote.to_dict(), 201
 
 
 @app.route("/quotes/<int:id>", methods=['PUT'])
@@ -151,6 +158,29 @@ def delete_quote(id: int):
     except Exception as e:
         db.session.rollback()
         abort(503, f"Database error: {e.description}")
+
+
+@app.route("/quotes/count")
+def get_quotes_count():
+    count = db.session.scalar(func.count(QuoteModel.id))
+    return jsonify(count=count), 200
+
+
+# @app.route("/quotes", methods=['POST'])
+# def create_quote():
+#     new_data = request.json
+#     if 'author' not in new_data or 'text' not in new_data:
+#         return jsonify({"error": "Author or text not found"}), 404
+#     else:
+#         if 'rating' not in new_data or new_data['rating'] not in range(1, 6):
+#             rating = 1
+#         else:
+#             rating = new_data['rating']
+#         new_quote = QuoteModel(author=new_data['author'], text=new_data['text'], rating=rating)
+#         db.session.add(new_quote)
+#         db.session.commit()
+#         new_quote = new_quote.to_dict()
+#         return jsonify(new_quote), 201
 
 
 @app.route("/quotes/filter", methods=['GET'])
