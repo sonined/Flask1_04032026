@@ -109,10 +109,10 @@ def edit_quote(id):
     new_data = request.json
     quote = db.session.get(QuoteModel, id)
     if quote:
-        if new_data['rating'] not in range(1, 6):
-            pass
-        else:
-            quote.rating = new_data['rating']
+        if "rating" in new_data:
+            rating = new_data['rating']
+            if new_data['rating'] in range(1, 6):
+                quote.rating = rating 
         if "author" in new_data:
             quote.author = new_data["author"]
         if "text" in new_data:
